@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/anomalyco/opencode/pkg/api"
+	"github.com/anomalyco/opencode/pkg/core"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -22,6 +23,11 @@ type App struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	layout  *tview.Flex
+	
+	// File watching
+	watcher  *core.FileWatcher
+	eventBus *EventBus
+	basePath string
 }
 
 func NewApp(serverURL string) (*App, error) {
@@ -33,22 +39,32 @@ func NewApp(serverURL string) (*App, error) {
 		return nil, fmt.Errorf("cannot connect to server: %w", err)
 	}
 
+	// Initialize file watcher
+	watcher, err := core.NewFileWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("cannot create file watcher: %w", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	a := &App{
-		root:      root,
-		client:    client,
-		ctx:       ctx,
-		cancel:    cancel,
-		fileTree:  NewFileTree(client),
-		editor:    NewEditor(),
+		root:       root,
+		client:     client,
+		ctx:        ctx,
+		cancel:     cancel,
+		fileTree:   NewFileTree(client),
+		editor:     NewEditor(),
 		cmdPalette: NewCommandPalette(),
-		statusBar: NewStatusBar(),
+		statusBar:  NewStatusBar(),
+		watcher:    watcher,
+		eventBus:   NewEventBus(),
+		basePath:   ".",
 	}
 
 	// Build layout
 	a.buildLayout()
 	a.setupKeyBindings()
+	a.setupFileWatching()
 
 	return a, nil
 }
@@ -102,6 +118,36 @@ func (a *App) setupKeyBindings() {
 			a.loadFile(path)
 		}
 	})
+}
+
+func (a *App) setupFileWatching() {
+	a.watcher.Watch(a.basePath)
+	a.watcher.Start()
+
+	// Handle file events in background
+	go func() {
+		for event := range a.watcher.Events() {
+			switch event.Type {
+			case "create", "delete", "rename":
+				// Refresh file tree
+				a.eventBus.Publish(Event{
+					Type: EventFileCreated,
+					Path: event.Path,
+				})
+				a.fileTree.Refresh()
+
+			case "modify":
+				// Check if it's the current file
+				if event.Path == a.editor.GetPath() {
+					a.eventBus.Publish(Event{
+						Type: EventFileModified,
+						Path: event.Path,
+					})
+					a.statusBar.SetStatus(fmt.Sprintf("File modified externally: %s", event.Path))
+				}
+			}
+		}
+	}()
 }
 
 func (a *App) loadFile(path string) {

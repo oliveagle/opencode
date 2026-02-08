@@ -82,3 +82,10 @@ func (ft *FileTree) View() *tview.TreeView {
 func (ft *FileTree) SetSelectionChangedFunc(fn func(path string, isDir bool)) {
 	ft.onSelected = fn
 }
+
+func (ft *FileTree) Refresh() {
+	root := ft.view.GetRoot()
+	if root != nil {
+		ft.loadDirectory(root, ".")
+	}
+}
