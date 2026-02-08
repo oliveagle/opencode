@@ -1,56 +1,166 @@
 package tui
 
 import (
+	"context"
+	"fmt"
 	"log"
 
+	"github.com/anomalyco/opencode/pkg/api"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 type App struct {
-	root *tview.Application
+	root       *tview.Application
+	client     *api.Client
+	fileTree   *FileTree
+	editor     *Editor
+	cmdPalette *CommandPalette
+	statusBar  *StatusBar
+	modal      *tview.Modal
+
+	ctx     context.Context
+	cancel  context.CancelFunc
+	layout  *tview.Flex
 }
 
-func NewApp() *App {
-	app := tview.NewApplication()
-	
-	return &App{
-		root: app,
+func NewApp(serverURL string) (*App, error) {
+	root := tview.NewApplication()
+	client := api.NewClient(serverURL)
+
+	// Test server connection
+	if err := client.Health(); err != nil {
+		return nil, fmt.Errorf("cannot connect to server: %w", err)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	a := &App{
+		root:      root,
+		client:    client,
+		ctx:       ctx,
+		cancel:    cancel,
+		fileTree:  NewFileTree(client),
+		editor:    NewEditor(),
+		cmdPalette: NewCommandPalette(),
+		statusBar: NewStatusBar(),
+	}
+
+	// Build layout
+	a.buildLayout()
+	a.setupKeyBindings()
+
+	return a, nil
+}
+
+func (a *App) buildLayout() {
+	// Main content area (split between file tree and editor)
+	mainContent := tview.NewFlex().
+		SetDirection(tview.FlexColumn).
+		AddItem(a.fileTree.View(), 30, 0, false).
+		AddItem(a.editor.View(), 0, 1, true)
+
+	// Vertical split (content + status)
+	a.layout = tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(createHeader(), 1, 0, false).
+		AddItem(mainContent, 0, 1, true).
+		AddItem(a.statusBar.View(), 1, 0, false)
+
+	a.root.SetRoot(a.layout, true)
+}
+
+func (a *App) setupKeyBindings() {
+	a.root.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		modifiers := event.Modifiers()
+
+		if event.Key() == tcell.KeyCtrlC || event.Key() == tcell.KeyCtrlQ {
+			a.root.Stop()
+			return nil
+		}
+
+		if event.Rune() == 'k' && modifiers&tcell.ModCtrl != 0 {
+			a.showCommandPalette()
+			return nil
+		}
+
+		if event.Rune() == 's' && modifiers&tcell.ModCtrl != 0 {
+			a.saveCurrentFile()
+			return nil
+		}
+
+		if event.Rune() == 'n' && modifiers&tcell.ModCtrl != 0 {
+			a.showNewFileDialog()
+			return nil
+		}
+
+		return event
+	})
+
+	a.fileTree.SetSelectionChangedFunc(func(path string, isDir bool) {
+		if !isDir {
+			a.loadFile(path)
+		}
+	})
+}
+
+func (a *App) loadFile(path string) {
+	content, err := a.client.ReadFile(path)
+	if err != nil {
+		a.statusBar.SetStatus(fmt.Sprintf("Error: %v", err))
+		return
+	}
+
+	a.editor.SetContent(content, path)
+	a.statusBar.SetStatus(fmt.Sprintf("Loaded: %s", path))
+}
+
+func (a *App) saveCurrentFile() {
+	path := a.editor.GetPath()
+	if path == "" {
+		a.statusBar.SetStatus("No file open")
+		return
+	}
+
+	content := a.editor.GetContent()
+	if err := a.client.WriteFile(path, content); err != nil {
+		a.statusBar.SetStatus(fmt.Sprintf("Save failed: %v", err))
+		return
+	}
+
+	a.statusBar.SetStatus(fmt.Sprintf("Saved: %s", path))
+}
+
+func (a *App) showCommandPalette() {
+	a.root.SetFocus(a.cmdPalette.View())
+	a.statusBar.SetStatus("Command palette (ESC to close)")
+}
+
+func (a *App) showNewFileDialog() {
+	modal := tview.NewModal().
+		SetText("New file name:").
+		AddButtons([]string{"Create", "Cancel"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			a.root.SetRoot(a.layout, true)
+		})
+
+	a.root.SetRoot(modal, false)
 }
 
 func (a *App) Run() error {
-	log.Println("Starting opencode TUI")
-	
-	// Create main layout
-	mainView := tview.NewFlex().
-		SetDirection(tview.FlexRow).
-		AddItem(createHeader(), 1, 0, false).
-		AddItem(createMainPane(), 0, 1, true).
-		AddItem(createFooter(), 1, 0, false)
-	
-	if err := a.root.SetRoot(mainView, true).Run(); err != nil {
-		return err
-	}
-	return nil
+	log.Println("Starting OpenCode TUI")
+	return a.root.Run()
+}
+
+func (a *App) Stop() {
+	a.cancel()
+	a.root.Stop()
 }
 
 func createHeader() *tview.TextView {
 	header := tview.NewTextView().
-		SetText("OpenCode TUI - v0.1.0").
-		SetTextAlign(tview.AlignCenter)
-	header.SetBorder(true).SetTitle("Header")
+		SetText(" OpenCode - TUI v0.1.0 | Ctrl+K: Commands | Ctrl+S: Save | Ctrl+Q: Quit").
+		SetTextAlign(tview.AlignLeft)
 	return header
 }
 
-func createMainPane() *tview.Flex {
-	// TODO: implement main content pane with file explorer, editor, etc.
-	content := tview.NewTextView().
-		SetText("Main content area - TUI under development")
-	return tview.NewFlex().AddItem(content, 0, 1, true)
-}
-
-func createFooter() *tview.TextView {
-	footer := tview.NewTextView().
-		SetText("Status bar - Ready")
-	return footer
-}

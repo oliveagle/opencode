@@ -1,33 +1,11 @@
 package api
 
-// FileInfo represents metadata about a file
-type FileInfo struct {
-	Path    string
-	Name    string
-	Size    int64
-	IsDir   bool
-	ModTime int64
-}
+import "github.com/anomalyco/opencode/pkg/types"
 
-// ProjectConfig represents project configuration
-type ProjectConfig struct {
-	Name  string
-	Path  string
-	Root  string
-	Alias string
-}
+// Re-export types for backward compatibility
+type FileInfo = types.FileInfo
+type ProjectConfig = types.ProjectConfig
+type RequestPayload = types.RequestPayload
+type ResponsePayload = types.ResponsePayload
+type SearchMatch = types.SearchMatch
 
-// RequestPayload represents a request from TUI to backend
-type RequestPayload struct {
-	Type    string            `json:"type"`
-	Path    string            `json:"path"`
-	Content string            `json:"content,omitempty"`
-	Params  map[string]string `json:"params,omitempty"`
-}
-
-// ResponsePayload represents a response from backend to TUI
-type ResponsePayload struct {
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   string      `json:"error,omitempty"`
-}
