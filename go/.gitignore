@@ -1,0 +1,23 @@
+# Binaries
+bin/
+dist/
+
+# Go build cache
+.cache/
+*.o
+*.a
+
+# Go module
+go.sum
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test coverage
+*.out
+*.test
