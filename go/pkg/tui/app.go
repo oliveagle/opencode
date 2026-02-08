@@ -110,6 +110,32 @@ func (a *App) setupKeyBindings() {
 			return nil
 		}
 
+		// Undo: Ctrl+Z
+		if event.Rune() == 'z' && modifiers&tcell.ModCtrl != 0 {
+			a.editor.Undo()
+			a.statusBar.SetStatus("Undo")
+			return nil
+		}
+
+		// Redo: Ctrl+Shift+Z
+		if event.Rune() == 'Z' && modifiers&tcell.ModCtrl != 0 {
+			a.editor.Redo()
+			a.statusBar.SetStatus("Redo")
+			return nil
+		}
+
+		// Find: Ctrl+F
+		if event.Rune() == 'f' && modifiers&tcell.ModCtrl != 0 {
+			a.showFindDialog()
+			return nil
+		}
+
+		// Replace: Ctrl+H
+		if event.Rune() == 'h' && modifiers&tcell.ModCtrl != 0 {
+			a.showReplaceDialog()
+			return nil
+		}
+
 		return event
 	})
 
@@ -191,6 +217,52 @@ func (a *App) showNewFileDialog() {
 		})
 
 	a.root.SetRoot(modal, false)
+}
+
+func (a *App) showFindDialog() {
+	findInput := tview.NewInputField().
+		SetLabel("Find: ").
+		SetFieldWidth(50)
+
+	flex := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(findInput, 1, 0, true).
+		AddItem(a.layout, 0, 1, false)
+
+	a.root.SetRoot(flex, true)
+
+	findInput.SetDoneFunc(func(key tcell.Key) {
+		if key == tcell.KeyEnter {
+			pattern := findInput.GetText()
+			matches := a.editor.FindAll(pattern, false)
+			a.statusBar.SetStatus(fmt.Sprintf("Found %d matches", len(matches)))
+			a.root.SetRoot(a.layout, true)
+		} else if key == tcell.KeyEscape {
+			a.root.SetRoot(a.layout, true)
+		}
+	})
+}
+
+func (a *App) showReplaceDialog() {
+	findInput := tview.NewInputField().SetLabel("Find: ").SetFieldWidth(50)
+	replaceInput := tview.NewInputField().SetLabel("Replace: ").SetFieldWidth(50)
+
+	replaceBtn := tview.NewButton("Replace All").SetSelectedFunc(func() {
+		pattern := findInput.GetText()
+		replacement := replaceInput.GetText()
+		count := a.editor.ReplaceAll(pattern, replacement, false)
+		a.statusBar.SetStatus(fmt.Sprintf("Replaced %d occurrences", count))
+		a.root.SetRoot(a.layout, true)
+	})
+
+	flex := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(findInput, 1, 0, true).
+		AddItem(replaceInput, 1, 0, false).
+		AddItem(replaceBtn, 1, 0, false).
+		AddItem(a.layout, 0, 1, false)
+
+	a.root.SetRoot(flex, true)
 }
 
 func (a *App) Run() error {
