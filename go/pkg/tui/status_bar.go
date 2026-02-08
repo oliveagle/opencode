@@ -61,7 +61,7 @@ func (sb *StatusBar) View() *tview.TextView {
 
 func (sb *StatusBar) updateDisplay() {
 	now := time.Now().Format("15:04:05")
-	text := fmt.Sprintf(" %s | L:%d C:%d | %s | %s",
+	text := fmt.Sprintf(" %s | L:%d C:%d | Lines:%d | %s",
 		sb.status,
 		sb.line+1,
 		sb.column,
